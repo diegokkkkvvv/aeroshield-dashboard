@@ -22,6 +22,10 @@ import {
   Truck,
   Warehouse,
   Crown,
+  Activity,
+  TrendingUp,
+  Layers3,
+  Clock3,
 } from "lucide-react";
 import {
   AreaChart,
@@ -40,9 +44,73 @@ import {
   Cell,
 } from "recharts";
 
-const scenarios = {
+type ScenarioKey = "base" | "bull" | "stress";
+type ViewKey = "overview" | "inventory" | "sourcing";
+type RiskLevel = "High" | "Medium" | "Low";
+
+type InventoryItem = {
+  material: string;
+  onHand: number;
+  reorderPoint: number;
+  safetyStock: number;
+  incoming: number;
+  daysCover: number;
+  risk: RiskLevel;
+  criticality: string;
+  fillRate: number;
+  spend: number;
+};
+
+type StageItem = {
+  stage: string;
+  capacity: number;
+  actual: number;
+  yield: number;
+  wip: number;
+};
+
+type SupplierItem = {
+  supplier: string;
+  material: string;
+  otd: number;
+  leadTime: number;
+  risk: RiskLevel;
+  status: string;
+};
+
+const scenarios: Record<
+  ScenarioKey,
+  {
+    name: string;
+    assumptions: string[];
+    plantTargetSqftWeek: number;
+    oee: number;
+    utilization: number;
+    serviceLevel: number;
+    yield: number;
+    otif: number;
+    inventoryTurns: number;
+    wipDays: number;
+    backlogUnits: number;
+    safetyIncidents: number;
+    openPOs: number;
+    incomingToday: number;
+    riskMaterials: number;
+    vessel36Cycles: number;
+    vessel60Cycles: number;
+    rawMaterialDays: number;
+    stockRisk: RiskLevel;
+    weeklyThroughput: { week: string; sqft: number; target: number }[];
+    stageFlow: StageItem[];
+    inventory: InventoryItem[];
+    supplierRiskMix: { name: string; value: number }[];
+    serviceTrend: { day: string; service: number }[];
+    sourcing: SupplierItem[];
+  }
+> = {
   base: {
     name: "Base",
+    assumptions: ["Stable demand", "Normal supplier lead time", "Expected process yield"],
     plantTargetSqftWeek: 5600,
     oee: 84.2,
     utilization: 79.4,
@@ -58,6 +126,8 @@ const scenarios = {
     riskMaterials: 3,
     vessel36Cycles: 1,
     vessel60Cycles: 4,
+    rawMaterialDays: 18.4,
+    stockRisk: "Low",
     weeklyThroughput: [
       { week: "W1", sqft: 4920, target: 5600 },
       { week: "W2", sqft: 5210, target: 5600 },
@@ -90,13 +160,13 @@ const scenarios = {
       { name: "Low", value: 2 },
     ],
     serviceTrend: [
-      { day: "Mon", fill: 98.4, otif: 95.8 },
-      { day: "Tue", fill: 97.9, otif: 94.9 },
-      { day: "Wed", fill: 99.1, otif: 96.2 },
-      { day: "Thu", fill: 98.8, otif: 95.1 },
-      { day: "Fri", fill: 97.2, otif: 93.7 },
-      { day: "Sat", fill: 98.5, otif: 95.4 },
-      { day: "Sun", fill: 99.0, otif: 96.0 },
+      { day: "Mon", service: 98.4 },
+      { day: "Tue", service: 97.9 },
+      { day: "Wed", service: 99.1 },
+      { day: "Thu", service: 98.8 },
+      { day: "Fri", service: 97.2 },
+      { day: "Sat", service: 98.5 },
+      { day: "Sun", service: 99.0 },
     ],
     sourcing: [
       { supplier: "Supplier A", material: "Silica precursor", otd: 91, leadTime: 18, risk: "High", status: "Dual source needed" },
@@ -107,6 +177,7 @@ const scenarios = {
   },
   bull: {
     name: "Bull",
+    assumptions: ["Demand +25%", "High line loading", "No major supplier disruption"],
     plantTargetSqftWeek: 6200,
     oee: 81.1,
     utilization: 86.7,
@@ -122,6 +193,8 @@ const scenarios = {
     riskMaterials: 4,
     vessel36Cycles: 1,
     vessel60Cycles: 4,
+    rawMaterialDays: 15.2,
+    stockRisk: "Medium",
     weeklyThroughput: [
       { week: "W1", sqft: 5600, target: 6200 },
       { week: "W2", sqft: 5780, target: 6200 },
@@ -154,13 +227,13 @@ const scenarios = {
       { name: "Low", value: 2 },
     ],
     serviceTrend: [
-      { day: "Mon", fill: 96.8, otif: 92.7 },
-      { day: "Tue", fill: 97.1, otif: 93.4 },
-      { day: "Wed", fill: 96.0, otif: 92.0 },
-      { day: "Thu", fill: 97.6, otif: 94.1 },
-      { day: "Fri", fill: 95.9, otif: 91.8 },
-      { day: "Sat", fill: 97.4, otif: 93.6 },
-      { day: "Sun", fill: 98.0, otif: 94.0 },
+      { day: "Mon", service: 96.8 },
+      { day: "Tue", service: 97.1 },
+      { day: "Wed", service: 96.0 },
+      { day: "Thu", service: 97.6 },
+      { day: "Fri", service: 95.9 },
+      { day: "Sat", service: 97.4 },
+      { day: "Sun", service: 98.0 },
     ],
     sourcing: [
       { supplier: "Supplier A", material: "Silica precursor", otd: 90, leadTime: 19, risk: "High", status: "Add contingency lot" },
@@ -171,6 +244,7 @@ const scenarios = {
   },
   stress: {
     name: "Stress",
+    assumptions: ["Supplier delays", "Yield loss", "Capacity under pressure"],
     plantTargetSqftWeek: 5600,
     oee: 74.9,
     utilization: 88.1,
@@ -186,6 +260,8 @@ const scenarios = {
     riskMaterials: 5,
     vessel36Cycles: 1,
     vessel60Cycles: 3,
+    rawMaterialDays: 9.7,
+    stockRisk: "High",
     weeklyThroughput: [
       { week: "W1", sqft: 4380, target: 5600 },
       { week: "W2", sqft: 4610, target: 5600 },
@@ -218,13 +294,13 @@ const scenarios = {
       { name: "Low", value: 0 },
     ],
     serviceTrend: [
-      { day: "Mon", fill: 91.5, otif: 88.0 },
-      { day: "Tue", fill: 92.8, otif: 89.4 },
-      { day: "Wed", fill: 90.7, otif: 87.2 },
-      { day: "Thu", fill: 91.9, otif: 88.8 },
-      { day: "Fri", fill: 89.8, otif: 86.5 },
-      { day: "Sat", fill: 92.2, otif: 89.0 },
-      { day: "Sun", fill: 93.4, otif: 89.9 },
+      { day: "Mon", service: 91.5 },
+      { day: "Tue", service: 92.8 },
+      { day: "Wed", service: 90.7 },
+      { day: "Thu", service: 91.9 },
+      { day: "Fri", service: 89.8 },
+      { day: "Sat", service: 92.2 },
+      { day: "Sun", service: 93.4 },
     ],
     sourcing: [
       { supplier: "Supplier A", material: "Silica precursor", otd: 87, leadTime: 22, risk: "High", status: "Escalate executive review" },
@@ -235,7 +311,7 @@ const scenarios = {
   },
 };
 
-const riskColor = {
+const riskColor: Record<RiskLevel, string> = {
   High: "bg-rose-500/15 text-rose-200 border-rose-400/30",
   Medium: "bg-amber-500/15 text-amber-200 border-amber-400/30",
   Low: "bg-emerald-500/15 text-emerald-200 border-emerald-400/30",
@@ -251,6 +327,20 @@ function kpiTone(value: number, good: number, warn: number) {
 
 function formatMoney(value: number) {
   return `$${value.toLocaleString()}`;
+}
+
+function calcSupplierRiskScore(item: SupplierItem) {
+  const reliabilityPenalty = 100 - item.otd;
+  const leadPenalty = item.leadTime * 1.4;
+  const criticalPenalty = item.risk === "High" ? 20 : item.risk === "Medium" ? 10 : 4;
+  return Math.round(reliabilityPenalty + leadPenalty + criticalPenalty);
+}
+
+function calcInventoryRisk(item: InventoryItem): RiskLevel {
+  const coverGap = item.onHand - item.reorderPoint;
+  if (coverGap <= 0 || item.daysCover <= 8 || item.fillRate < 95) return "High";
+  if (item.daysCover <= 14 || item.fillRate < 98) return "Medium";
+  return "Low";
 }
 
 function MetricCard({
@@ -291,8 +381,8 @@ function DataTable({
   dense = false,
 }: {
   title: string;
-  columns: { key: string; label: string; render?: (value: any, row: any) => React.ReactNode }[];
-  rows: any[];
+  columns: { key: string; label: string; render?: (value: unknown, row: Record<string, unknown>) => React.ReactNode }[];
+  rows: Record<string, unknown>[];
   dense?: boolean;
 }) {
   return (
@@ -323,7 +413,7 @@ function DataTable({
                       key={col.key}
                       className={`px-3 ${dense ? "py-2" : "py-3"} text-sm text-slate-100`}
                     >
-                      {col.render ? col.render(row[col.key], row) : row[col.key]}
+                      {col.render ? col.render(row[col.key], row) : String(row[col.key] ?? "")}
                     </td>
                   ))}
                 </tr>
@@ -360,70 +450,72 @@ function SectionButton({
   );
 }
 
+function InsightBox({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
+      <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">{title}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-100">{children}</p>
+    </div>
+  );
+}
+
 export default function AeroShieldOperationsDashboard() {
-  const [scenarioKey, setScenarioKey] = useState<"base" | "bull" | "stress">("base");
-  const [view, setView] = useState<"overview" | "inventory" | "sourcing">("overview");
+  const [scenarioKey, setScenarioKey] = useState<ScenarioKey>("base");
+  const [view, setView] = useState<ViewKey>("overview");
 
   const data = scenarios[scenarioKey];
 
   const summary = useMemo(() => {
     const totalSpend = data.inventory.reduce((sum, item) => sum + item.spend, 0);
     const materialsBelowROP = data.inventory.filter((item) => item.onHand <= item.reorderPoint).length;
-    const highRisk = data.inventory.filter((item) => item.risk === "High").length;
+    const highRiskSuppliers = data.sourcing.filter((item) => item.risk === "High").length;
     const bottleneck = [...data.stageFlow].sort((a, b) => b.actual / b.capacity - a.actual / a.capacity)[0];
     const weakestFill = [...data.inventory].sort((a, b) => a.fillRate - b.fillRate)[0];
-    return { totalSpend, materialsBelowROP, highRisk, bottleneck, weakestFill };
+    const highestSupplierRisk = [...data.sourcing].sort(
+      (a, b) => calcSupplierRiskScore(b) - calcSupplierRiskScore(a)
+    )[0];
+    return { totalSpend, materialsBelowROP, highRiskSuppliers, bottleneck, weakestFill, highestSupplierRisk };
   }, [data]);
 
-  const alerts = useMemo(() => {
-    const belowROP = data.inventory
-      .filter((item) => item.onHand <= item.reorderPoint)
-      .map((item) => ({
-        type: "critical",
-        message: `${item.material} is below reorder point. Expedite replenishment or reallocate stock.`,
-      }));
-
-    const lowFill = data.inventory
-      .filter((item) => item.fillRate < 95)
-      .map((item) => ({
-        type: "warning",
-        message: `${item.material} fill rate is ${item.fillRate.toFixed(1)}%. Review safety stock and supplier reliability.`,
-      }));
-
-    const processAlert = [
-      {
-        type: scenarioKey === "stress" ? "critical" : "info",
-        message:
-          scenarioKey === "stress"
-            ? `Bottleneck pressure is highest at ${summary.bottleneck.stage}. Add capacity recovery or WIP control immediately.`
-            : `Current process bottleneck is ${summary.bottleneck.stage}. Monitor load before demand changes.`,
-      },
-    ];
-
-    return [...belowROP, ...lowFill, ...processAlert].slice(0, 4);
-  }, [data, scenarioKey, summary.bottleneck.stage]);
-
-  const recommendations = useMemo(() => {
+  const decisionAlert = useMemo(() => {
     if (scenarioKey === "stress") {
-      return [
-        "Increase safety stock on low-e glass and adhesive because both are exposed on service and lead time.",
-        "Recover annealing capacity with a weekend shift or smaller lot sequencing to reduce WIP congestion.",
-        "Split supplier orders into staggered deliveries and pre-book emergency freight for critical materials.",
-      ];
+      return {
+        title: "Immediate Action",
+        body: `Protect ${summary.weakestFill.material}, expedite ${summary.highestSupplierRisk.supplier}, and add a controlled WIP buffer before ${summary.bottleneck.stage}.`,
+      };
     }
     if (scenarioKey === "bull") {
-      return [
-        "Reserve supplier capacity on low-e glass before demand expands further.",
-        "Protect throughput by holding a controlled buffer before annealing instead of overloading all stages equally.",
-        "Qualify a secondary adhesive source before demand becomes structurally higher.",
-      ];
+      return {
+        title: "Capacity Risk",
+        body: `Demand pressure is rising. Reserve supply capacity now and protect flow through ${summary.bottleneck.stage} before utilization becomes unstable.`,
+      };
     }
-    return [
-      "Keep the current cadence and use base case as the operating plan for weekly management review.",
-      "Qualify one backup supplier for adhesive to reduce single-point risk.",
-      "Track materials near reorder point daily and keep WIP disciplined in annealing and composite stages.",
-    ];
-  }, [scenarioKey]);
+    return {
+      title: "Daily Focus",
+      body: `Operations are stable. Monitor ${summary.bottleneck.stage}, maintain service above 97%, and review materials approaching reorder point every day.`,
+    };
+  }, [scenarioKey, summary]);
+
+  const inventoryRows = useMemo(
+    () =>
+      data.inventory.map((item) => ({
+        ...item,
+        stockRisk: calcInventoryRisk(item),
+      })),
+    [data.inventory]
+  );
+
+  const sourcingRows = useMemo(
+    () =>
+      data.sourcing.map((item) => ({
+        ...item,
+        riskScore: calcSupplierRiskScore(item),
+        sourceModel: item.risk === "High" ? "Single / fragile" : "Managed / mixed",
+      })),
+    [data.sourcing]
+  );
+
+  const overviewThroughputGap = data.weeklyThroughput[data.weeklyThroughput.length - 1].sqft - data.plantTargetSqftWeek;
 
   const inventoryColumns = [
     { key: "material", label: "Material" },
@@ -431,21 +523,20 @@ export default function AeroShieldOperationsDashboard() {
     {
       key: "onHand",
       label: "On Hand",
-      render: (v: number) => <span className="font-medium text-slate-50">{v.toLocaleString()}</span>,
+      render: (v: unknown) => <span className="font-medium text-slate-50">{Number(v).toLocaleString()}</span>,
     },
-    { key: "incoming", label: "Incoming" },
     { key: "reorderPoint", label: "ROP" },
     { key: "safetyStock", label: "Safety Stock" },
     { key: "daysCover", label: "Days Cover" },
     {
-      key: "fillRate",
-      label: "Fill Rate",
-      render: (v: number) => <span className={kpiTone(v, 98, 95)}>{v.toFixed(1)}%</span>,
+      key: "stockRisk",
+      label: "Stock Risk",
+      render: (v: unknown) => <Badge className={`border ${riskColor[v as RiskLevel]}`}>{String(v)}</Badge>,
     },
     {
-      key: "risk",
-      label: "Risk",
-      render: (v: "High" | "Medium" | "Low") => <Badge className={`border ${riskColor[v]}`}>{v}</Badge>,
+      key: "fillRate",
+      label: "Service Level",
+      render: (v: unknown) => <span className={kpiTone(Number(v), 98, 95)}>{Number(v).toFixed(1)}%</span>,
     },
   ];
 
@@ -454,14 +545,20 @@ export default function AeroShieldOperationsDashboard() {
     { key: "material", label: "Material" },
     {
       key: "otd",
-      label: "OTD %",
-      render: (v: number) => <span className={kpiTone(v, 95, 90)}>{v}%</span>,
+      label: "Reliability",
+      render: (v: unknown) => <span className={kpiTone(Number(v), 95, 90)}>{Number(v)}%</span>,
     },
-    { key: "leadTime", label: "Lead Time (days)" },
+    { key: "leadTime", label: "Lead Time" },
+    { key: "sourceModel", label: "Source Model" },
     {
-      key: "risk",
-      label: "Risk",
-      render: (v: "High" | "Medium" | "Low") => <Badge className={`border ${riskColor[v]}`}>{v}</Badge>,
+      key: "riskScore",
+      label: "Risk Score",
+      render: (v: unknown, row: Record<string, unknown>) => (
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{Number(v)}</span>
+          <Badge className={`border ${riskColor[row.risk as RiskLevel]}`}>{String(row.risk)}</Badge>
+        </div>
+      ),
     },
     { key: "status", label: "Action" },
   ];
@@ -488,21 +585,31 @@ export default function AeroShieldOperationsDashboard() {
               Operations Manager Dashboard
             </h1>
             <p className="mt-4 max-w-4xl text-lg leading-9 text-slate-300 md:text-2xl">
-              End-to-end visibility across throughput, WIP, material risk, supplier reliability, and production service for transparent aerogel and IGU operations.
+              Decision-focused control layer for throughput, capacity, inventory health, and sourcing risk.
             </p>
           </div>
 
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <Select value={scenarioKey} onValueChange={(value: "base" | "bull" | "stress") => setScenarioKey(value)}>
-              <SelectTrigger className="h-16 w-[260px] border-slate-700 bg-slate-950/70 text-xl text-slate-50">
-                <SelectValue placeholder="Scenario" />
-              </SelectTrigger>
-              <SelectContent className="border-slate-700 bg-slate-950 text-slate-50">
-                <SelectItem value="base">Base Scenario</SelectItem>
-                <SelectItem value="bull">Bull Scenario</SelectItem>
-                <SelectItem value="stress">Stress Scenario</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div className="space-y-3">
+              <Select value={scenarioKey} onValueChange={(value: ScenarioKey) => setScenarioKey(value)}>
+                <SelectTrigger className="h-16 w-[260px] border-slate-700 bg-slate-950/70 text-xl text-slate-50">
+                  <SelectValue placeholder="Scenario" />
+                </SelectTrigger>
+                <SelectContent className="border-slate-700 bg-slate-950 text-slate-50">
+                  <SelectItem value="base">Base Scenario</SelectItem>
+                  <SelectItem value="bull">Bull Scenario</SelectItem>
+                  <SelectItem value="stress">Stress Scenario</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Scenario assumptions</p>
+                <div className="mt-3 space-y-2">
+                  {data.assumptions.map((item) => (
+                    <div key={item} className="text-sm text-slate-200">• {item}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
 
             <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/60 p-2 shadow-lg">
               <SectionButton active={view === "overview"} onClick={() => setView("overview")}>
@@ -518,43 +625,29 @@ export default function AeroShieldOperationsDashboard() {
           </div>
         </div>
 
-        {alerts.length > 0 && (
-          <div className="mb-6 grid grid-cols-1 gap-3 xl:grid-cols-2">
-            {alerts.map((alert, idx) => (
-              <div
-                key={idx}
-                className={`rounded-2xl border p-4 ${
-                  alert.type === "critical"
-                    ? "border-rose-400/30 bg-rose-500/10"
-                    : alert.type === "warning"
-                    ? "border-amber-400/30 bg-amber-500/10"
-                    : "border-cyan-400/30 bg-cyan-500/10"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="mt-0.5 h-5 w-5 text-slate-50" />
-                  <p className="text-sm leading-6 text-slate-100">{alert.message}</p>
-                </div>
-              </div>
-            ))}
+        <div className="mb-6 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-1 h-5 w-5 text-cyan-200" />
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">{decisionAlert.title}</p>
+              <p className="mt-2 text-sm leading-7 text-slate-100">{decisionAlert.body}</p>
+            </div>
           </div>
-        )}
+        </div>
 
         {view === "overview" && (
           <>
-            <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+            <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <MetricCard title="OEE" value={`${data.oee.toFixed(1)}%`} subtitle="Overall equipment effectiveness" icon={Gauge} tone={kpiTone(data.oee, 85, 78)} />
-              <MetricCard title="Plant Utilization" value={`${data.utilization.toFixed(1)}%`} subtitle="Capacity consumed" icon={Factory} tone={kpiTone(100 - Math.abs(82 - data.utilization), 95, 85)} />
-              <MetricCard title="Service Level" value={`${data.serviceLevel.toFixed(1)}%`} subtitle="Material service performance" icon={PackageCheck} tone={kpiTone(data.serviceLevel, 98, 95)} />
+              <MetricCard title="Utilization" value={`${data.utilization.toFixed(1)}%`} subtitle="Capacity consumed" icon={Activity} tone={kpiTone(100 - Math.abs(82 - data.utilization), 95, 85)} />
+              <MetricCard title="Service Level" value={`${data.serviceLevel.toFixed(1)}%`} subtitle="Customer service stability" icon={PackageCheck} tone={kpiTone(data.serviceLevel, 98, 95)} />
               <MetricCard title="Yield" value={`${data.yield.toFixed(1)}%`} subtitle="End-to-end process yield" icon={FlaskConical} tone={kpiTone(data.yield, 92, 88)} />
-              <MetricCard title="WIP Days" value={data.wipDays.toFixed(1)} subtitle="Average days in process" icon={Boxes} tone={data.wipDays <= 3 ? "text-emerald-300" : data.wipDays <= 3.5 ? "text-amber-300" : "text-rose-300"} />
-              <MetricCard title="Backlog" value={data.backlogUnits.toLocaleString()} subtitle="Units waiting release" icon={Truck} tone={data.backlogUnits < 60 ? "text-emerald-300" : data.backlogUnits < 100 ? "text-amber-300" : "text-rose-300"} />
             </div>
 
             <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-12">
               <Card className="col-span-1 border-slate-800/80 bg-slate-950/50 xl:col-span-8">
                 <CardHeader>
-                  <CardTitle className="text-slate-50">Weekly Throughput vs Target</CardTitle>
+                  <CardTitle className="text-slate-50">Throughput vs Weekly Target</CardTitle>
                 </CardHeader>
                 <CardContent className="h-[360px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -572,48 +665,24 @@ export default function AeroShieldOperationsDashboard() {
 
               <div className="col-span-1 grid grid-cols-1 gap-4 xl:col-span-4">
                 <Card className="border-slate-800/80 bg-slate-950/50">
-                  <CardContent className="p-5">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Scenario</p>
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <h3 className="text-3xl font-semibold text-slate-50">{data.name}</h3>
-                      <Badge className="border-cyan-400/30 bg-cyan-500/10 text-cyan-100">
-                        Target {data.plantTargetSqftWeek.toLocaleString()} sqft/week
-                      </Badge>
-                    </div>
-                    <div className="mt-5 space-y-4">
-                      <div>
-                        <div className="mb-2 flex justify-between text-sm text-slate-300"><span>On-time in-full</span><span>{data.otif.toFixed(1)}%</span></div>
-                        <Progress value={data.otif} className="h-2 bg-slate-800" />
-                      </div>
-                      <div>
-                        <div className="mb-2 flex justify-between text-sm text-slate-300"><span>Inventory turns</span><span>{data.inventoryTurns.toFixed(1)}x</span></div>
-                        <Progress value={Math.min(data.inventoryTurns * 8, 100)} className="h-2 bg-slate-800" />
-                      </div>
-                      <div>
-                        <div className="mb-2 flex justify-between text-sm text-slate-300"><span>High-risk materials</span><span>{data.riskMaterials}</span></div>
-                        <Progress value={Math.min((data.riskMaterials / 6) * 100, 100)} className="h-2 bg-slate-800" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-slate-800/80 bg-slate-950/50">
-                  <CardContent className="grid grid-cols-2 gap-4 p-5 text-sm">
+                  <CardHeader>
+                    <CardTitle className="text-slate-50">Operations Focus</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
                     <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                      <p className="text-slate-400">Open POs</p>
-                      <p className="mt-2 text-2xl font-semibold text-slate-50">{data.openPOs}</p>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Bottleneck stage</p>
+                      <p className="mt-2 text-2xl font-semibold text-slate-50">{summary.bottleneck.stage}</p>
+                      <p className="mt-1 text-sm text-slate-300">Actual {summary.bottleneck.actual} vs capacity {summary.bottleneck.capacity}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                      <p className="text-slate-400">Inbound Today</p>
-                      <p className="mt-2 text-2xl font-semibold text-slate-50">{data.incomingToday}</p>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Backlog</p>
+                      <p className={`mt-2 text-2xl font-semibold ${data.backlogUnits > 80 ? "text-rose-300" : "text-amber-300"}`}>{data.backlogUnits}</p>
+                      <p className="mt-1 text-sm text-slate-300">Units waiting release</p>
                     </div>
                     <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                      <p className="text-slate-400">36&quot; Vessel</p>
-                      <p className="mt-2 text-2xl font-semibold text-slate-50">{data.vessel36Cycles} cycle</p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                      <p className="text-slate-400">60&quot; Vessel</p>
-                      <p className="mt-2 text-2xl font-semibold text-slate-50">{data.vessel60Cycles} cycles</p>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Throughput gap</p>
+                      <p className={`mt-2 text-2xl font-semibold ${overviewThroughputGap >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{overviewThroughputGap >= 0 ? "+" : ""}{overviewThroughputGap.toLocaleString()} sqft</p>
+                      <p className="mt-1 text-sm text-slate-300">Latest week vs target</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -623,7 +692,7 @@ export default function AeroShieldOperationsDashboard() {
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
               <Card className="col-span-1 border-slate-800/80 bg-slate-950/50 xl:col-span-5">
                 <CardHeader>
-                  <CardTitle className="text-slate-50">Process Stage Performance</CardTitle>
+                  <CardTitle className="text-slate-50">Stage Loading</CardTitle>
                 </CardHeader>
                 <CardContent className="h-[360px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -641,7 +710,7 @@ export default function AeroShieldOperationsDashboard() {
 
               <Card className="col-span-1 border-slate-800/80 bg-slate-950/50 xl:col-span-4">
                 <CardHeader>
-                  <CardTitle className="text-slate-50">Service Trend</CardTitle>
+                  <CardTitle className="text-slate-50">Service Level Trend</CardTitle>
                 </CardHeader>
                 <CardContent className="h-[360px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -650,66 +719,32 @@ export default function AeroShieldOperationsDashboard() {
                       <XAxis dataKey="day" stroke="#cbd5e1" />
                       <YAxis stroke="#cbd5e1" domain={[85, 100]} />
                       <Tooltip {...chartTooltip} />
-                      <Line type="monotone" dataKey="fill" stroke="#22d3ee" strokeWidth={3} dot={{ r: 4 }} />
-                      <Line type="monotone" dataKey="otif" stroke="#fbbf24" strokeWidth={3} dot={{ r: 4 }} />
+                      <Line type="monotone" dataKey="service" stroke="#22d3ee" strokeWidth={3} dot={{ r: 4 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
 
-              <Card className="col-span-1 border-slate-800/80 bg-slate-950/50 xl:col-span-3">
-                <CardHeader>
-                  <CardTitle className="text-slate-50">Supplier Risk Mix</CardTitle>
-                </CardHeader>
-                <CardContent className="h-[360px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={data.supplierRiskMix} dataKey="value" nameKey="name" innerRadius={70} outerRadius={110} paddingAngle={4}>
-                        {data.supplierRiskMix.map((entry, idx) => (
-                          <Cell key={entry.name} fill={pieColors[idx % pieColors.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip {...chartTooltip} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-12">
-              <div className="col-span-1 xl:col-span-8">
-                <DataTable title="Inventory Control Board" columns={inventoryColumns} rows={data.inventory} />
+              <div className="col-span-1 space-y-4 xl:col-span-3">
+                <InsightBox title="Key operations insight">
+                  {scenarioKey === "stress"
+                    ? `The plant is not failing because of one metric. It is failing because low yield, backlog, and supplier pressure are all converging around ${summary.bottleneck.stage}.`
+                    : scenarioKey === "bull"
+                    ? `The system can still grow, but ${summary.bottleneck.stage} is becoming the control point. Demand is increasing faster than flexibility.`
+                    : `Base case is stable, but ${summary.bottleneck.stage} remains the first constraint to watch if demand increases.`}
+                </InsightBox>
+                <Card className="border-slate-800/80 bg-slate-950/50">
+                  <CardHeader>
+                    <CardTitle className="text-slate-50">Plant Snapshot</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm text-slate-200">
+                    <div className="flex items-center justify-between rounded-xl bg-slate-950/80 p-3"><span>Open POs</span><span>{data.openPOs}</span></div>
+                    <div className="flex items-center justify-between rounded-xl bg-slate-950/80 p-3"><span>Inbound Today</span><span>{data.incomingToday}</span></div>
+                    <div className="flex items-center justify-between rounded-xl bg-slate-950/80 p-3"><span>60&quot; Vessel Cycles</span><span>{data.vessel60Cycles}</span></div>
+                    <div className="flex items-center justify-between rounded-xl bg-slate-950/80 p-3"><span>Safety Incidents</span><span className={data.safetyIncidents === 0 ? "text-emerald-300" : "text-rose-300"}>{data.safetyIncidents}</span></div>
+                  </CardContent>
+                </Card>
               </div>
-              <Card className="col-span-1 border-slate-800/80 bg-slate-950/50 xl:col-span-4">
-                <CardHeader>
-                  <CardTitle className="text-slate-50">Operations Summary</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Total annual material spend</p>
-                    <p className="mt-2 text-3xl font-semibold text-cyan-300">{formatMoney(summary.totalSpend)}</p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Materials below ROP</p>
-                        <p className="mt-2 text-2xl font-semibold text-amber-300">{summary.materialsBelowROP}</p>
-                      </div>
-                      <ShieldAlert className="h-5 w-5 text-amber-300" />
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Highest bottleneck pressure</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-50">{summary.bottleneck.stage}</p>
-                    <p className="mt-1 text-sm text-slate-300">Actual {summary.bottleneck.actual} vs capacity {summary.bottleneck.capacity}</p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Lowest fill rate material</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-50">{summary.weakestFill.material}</p>
-                    <p className="mt-1 text-sm text-slate-300">{summary.weakestFill.fillRate.toFixed(1)}% fill rate</p>
-                  </div>
-                </CardContent>
-              </Card>
             </div>
           </>
         )}
@@ -717,29 +752,60 @@ export default function AeroShieldOperationsDashboard() {
         {view === "inventory" && (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
             <div className="col-span-1 xl:col-span-8">
-              <DataTable title="Inventory Control Board" columns={inventoryColumns} rows={data.inventory} />
+              <DataTable title="Inventory Control Board" columns={inventoryColumns} rows={inventoryRows as unknown as Record<string, unknown>[]} />
             </div>
-            <Card className="col-span-1 border-slate-800/80 bg-slate-950/50 xl:col-span-4">
-              <CardHeader>
-                <CardTitle className="text-slate-50">Inventory Recommendations</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {recommendations.map((item, idx) => (
-                  <div key={idx} className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                    <div className="flex items-start gap-3">
-                      <Crown className="mt-1 h-5 w-5 text-cyan-300" />
-                      <p className="text-sm leading-6 text-slate-200">{item}</p>
+
+            <div className="col-span-1 space-y-4 xl:col-span-4">
+              <Card className="border-slate-800/80 bg-slate-950/50">
+                <CardHeader>
+                  <CardTitle className="text-slate-50">Inventory Control Panel</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">WIP Days</p>
+                      <p className={`mt-2 text-3xl font-semibold ${data.wipDays <= 3 ? "text-emerald-300" : data.wipDays <= 3.5 ? "text-amber-300" : "text-rose-300"}`}>{data.wipDays.toFixed(1)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Raw Material Days</p>
+                      <p className={`mt-2 text-3xl font-semibold ${data.rawMaterialDays > 14 ? "text-emerald-300" : data.rawMaterialDays > 10 ? "text-amber-300" : "text-rose-300"}`}>{data.rawMaterialDays.toFixed(1)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Inventory Turns</p>
+                      <p className="mt-2 text-3xl font-semibold text-cyan-300">{data.inventoryTurns.toFixed(1)}x</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Stock Risk</p>
+                      <div className="mt-3"><Badge className={`border ${riskColor[data.stockRisk]}`}>{data.stockRisk}</Badge></div>
                     </div>
                   </div>
-                ))}
-                <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4">
-                  <p className="text-sm font-medium text-rose-200">Priority now</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-100">
-                    Protect {summary.weakestFill.material} first. It is the weakest material on service and will affect plant stability faster than the rest.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+                  <InsightBox title="Inventory insight">
+                    {scenarioKey === "stress"
+                      ? `Inventory is now a stability problem, not a cost problem. ${summary.weakestFill.material} is the first material that can break service.`
+                      : scenarioKey === "bull"
+                      ? `Bull demand does not only increase stock usage. It shortens reaction time. Safety stock and reorder discipline become more important.`
+                      : `Base inventory is adequate, but the dashboard shows which materials are closest to risk if demand shifts upward.`}
+                  </InsightBox>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-800/80 bg-slate-950/50">
+                <CardHeader>
+                  <CardTitle className="text-slate-50">Recommended Actions</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4 text-sm leading-6 text-slate-200">
+                    <div className="flex items-start gap-3"><Crown className="mt-1 h-5 w-5 text-cyan-300" /><span>Protect {summary.weakestFill.material} first and raise safety cover before service degrades further.</span></div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4 text-sm leading-6 text-slate-200">
+                    <div className="flex items-start gap-3"><Crown className="mt-1 h-5 w-5 text-cyan-300" /><span>Use daily review on materials near reorder point instead of only weekly review.</span></div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4 text-sm leading-6 text-slate-200">
+                    <div className="flex items-start gap-3"><Crown className="mt-1 h-5 w-5 text-cyan-300" /><span>Keep a controlled WIP buffer before {summary.bottleneck.stage}, not across all stages.</span></div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
             <Card className="col-span-1 border-slate-800/80 bg-slate-950/50 xl:col-span-6">
               <CardHeader>
@@ -781,26 +847,32 @@ export default function AeroShieldOperationsDashboard() {
         {view === "sourcing" && (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
             <div className="col-span-1 xl:col-span-8">
-              <DataTable title="Supplier Action Board" columns={sourcingColumns} rows={data.sourcing} dense />
+              <DataTable title="Supplier Action Board" columns={sourcingColumns} rows={sourcingRows as unknown as Record<string, unknown>[]} dense />
             </div>
-            <Card className="col-span-1 border-slate-800/80 bg-slate-950/50 xl:col-span-4">
-              <CardHeader>
-                <CardTitle className="text-slate-50">Sourcing Strategy</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                  <p className="text-sm leading-6 text-slate-200">
-                    Use supplier management as a plant stability lever, not only as a purchasing function. High-risk materials should be reviewed at the same cadence as production bottlenecks.
-                  </p>
-                </div>
-                {data.sourcing.map((item, idx) => (
-                  <div key={idx} className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                    <p className="text-sm font-medium text-slate-50">{item.supplier}</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-300">{item.status}</p>
+
+            <div className="col-span-1 space-y-4 xl:col-span-4">
+              <Card className="border-slate-800/80 bg-slate-950/50">
+                <CardHeader>
+                  <CardTitle className="text-slate-50">Sourcing Risk Panel</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Highest supplier risk</p>
+                    <p className="mt-2 text-xl font-semibold text-slate-50">{summary.highestSupplierRisk.supplier}</p>
+                    <p className="mt-1 text-sm text-slate-300">{summary.highestSupplierRisk.material}</p>
                   </div>
-                ))}
-              </CardContent>
-            </Card>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">High-risk suppliers</p>
+                    <p className="mt-2 text-3xl font-semibold text-rose-300">{summary.highRiskSuppliers}</p>
+                  </div>
+                  <InsightBox title="Sourcing insight">
+                    {scenarioKey === "stress"
+                      ? `Under stress, supplier reliability becomes the main driver of service failure. Capacity alone will not save the system.`
+                      : `Sourcing must be managed like an operations lever. External instability translates directly into internal throughput risk.`}
+                  </InsightBox>
+                </CardContent>
+              </Card>
+            </div>
 
             <Card className="col-span-1 border-slate-800/80 bg-slate-950/50 xl:col-span-6">
               <CardHeader>
@@ -822,7 +894,7 @@ export default function AeroShieldOperationsDashboard() {
 
             <Card className="col-span-1 border-slate-800/80 bg-slate-950/50 xl:col-span-6">
               <CardHeader>
-                <CardTitle className="text-slate-50">WIP and Yield Profile</CardTitle>
+                <CardTitle className="text-slate-50">WIP and Yield Exposure</CardTitle>
               </CardHeader>
               <CardContent className="h-[360px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -845,20 +917,20 @@ export default function AeroShieldOperationsDashboard() {
             <div>
               <p className="text-slate-50">Operations manager use case</p>
               <p className="mt-1 max-w-4xl leading-7 text-slate-300">
-                This dashboard is built for daily plant control. It combines throughput, process-stage pressure, inventory exposure, and supplier action tracking in one place so the manager can decide what to expedite, what to buffer, and where the next bottleneck will hit.
+                This dashboard is now structured around three decisions: is the plant under control, will inventory support the plan, and where can sourcing break the system.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
               <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Risk materials</p>
-                <p className="mt-1 text-xl font-semibold text-rose-200">{summary.highRisk}</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Material Spend</p>
+                <p className="mt-1 text-xl font-semibold text-cyan-300">{formatMoney(summary.totalSpend)}</p>
               </div>
               <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Safety incidents</p>
-                <p className={`mt-1 text-xl font-semibold ${data.safetyIncidents === 0 ? "text-emerald-300" : "text-rose-300"}`}>{data.safetyIncidents}</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Materials Below ROP</p>
+                <p className="mt-1 text-xl font-semibold text-amber-300">{summary.materialsBelowROP}</p>
               </div>
               <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Warehouse status</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Warehouse Status</p>
                 <p className="mt-1 text-xl font-semibold text-cyan-300"><Warehouse className="mr-2 inline h-4 w-4" />Live</p>
               </div>
             </div>
